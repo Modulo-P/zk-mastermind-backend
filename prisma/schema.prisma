@@ -1,0 +1,69 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model UTxO {
+  id          Int     @id @default(autoincrement())
+  txHash      String
+  outputIndex Int
+  address     String
+  amount      Json
+  dataHash    String?
+  plutusData  String?
+  scriptRef   String?
+  scriptHash  String?
+
+  @@unique([txHash, outputIndex])
+}
+
+model BridgeOperation {
+  id                     Int    @id @default(autoincrement())
+  origin                 String
+  originAddress          String
+  originTxHash           String
+  originOutputIndex      Int
+  amount                 Json
+  destination            String
+  destinationAddress     String
+  destinationTxHash      String
+  destinationOutputIndex Int
+  state                  String
+}
+
+model Game {
+  id           Int     @id @default(autoincrement())
+  codeMaster   String
+  codeBreaker  String?
+  solutionHash String
+  adaAmount    String
+  txHash       String
+  outputIndex  Int
+  currentTurn  Int
+  currentDatum String
+  state        String
+  turns        Turn[]
+
+  @@unique([txHash, outputIndex])
+}
+
+model Turn {
+  id            Int    @id @default(autoincrement())
+  game          Game   @relation(fields: [gameId], references: [id])
+  gameId        Int
+  turnNumber    Int
+  player        String
+  guessSequence Json
+  blackPegs     Int
+  whitePegs     Int
+  datum         String
+  txHash        String
+  outputIndex   Int
+}
