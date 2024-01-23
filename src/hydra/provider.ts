@@ -53,6 +53,8 @@ export class HydraProvider implements IFetcher, ISubmitter, IListener {
   ): Promise<UTxO[]> {
     let utxos: UTxO[] = [];
 
+    await this._manager.fetchUTxOs();
+
     for (const utxo of this._manager.utxos) {
       if (utxo.output.address === address) {
         if (asset && utxo.output.amount.some((a) => a.unit.startsWith(asset))) {
@@ -100,6 +102,7 @@ export class HydraProvider implements IFetcher, ISubmitter, IListener {
   }
 
   async fetchUTxOs(hash: string): Promise<UTxO[]> {
+    await this._manager.fetchUTxOs();
     return this._manager.utxos.filter((utxo) => utxo.input.txHash === hash);
   }
 

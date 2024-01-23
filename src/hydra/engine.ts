@@ -25,6 +25,8 @@ export class HydraEngine {
       process.env.BLOCKFROST_PROJECT_ID!
     );
 
+    this.start();
+
     this.ws.subscribe(new HydraUTxOsObserver(this));
     this.ws.subscribe(new HydraStatusObserver(this));
     this.ws.subscribe(new HydraErrorObserver(this));
@@ -147,6 +149,20 @@ export class HydraEngine {
     return response;
   }
 
+  async fetchUTxOs(): Promise<UTxO[]> {
+    const response = new Promise<UTxO[]>((resolve, reject) => {
+      this.promises.push({
+        command: { tag: "GetUTxO" },
+        resolve,
+        reject,
+      });
+    });
+
+    this.ws.sendCommand({ tag: "GetUTxO" });
+
+    return response;
+  }
+
   transformUTxO(utxo: UTxO) {
     const value: {
       lovelace: number;
@@ -219,6 +235,23 @@ class HydraUTxOsObserver extends HydraMessageObserver {
         );
         saveUTxOs(utxos);
         this._hydraEngine.utxos = utxos;
+        break;
+      case "GetUTxOResponse":
+        const utxosResponse = await convertHydraToMeshUTxOs(
+          message.utxo as HydraUTxO
+        );
+        saveUTxOs(utxosResponse);
+        this._hydraEngine.utxos = utxosResponse;
+
+        for (const promise of this._hydraEngine.promises) {
+          if (promise.command.tag === "GetUTxO") {
+            promise.resolve(utxosResponse);
+            this._hydraEngine.promises.splice(
+              this._hydraEngine.promises.indexOf(promise),
+              1
+            );
+          }
+        }
         break;
     }
   }

@@ -38,7 +38,7 @@ export async function createGame(req: Request, res: Response) {
       },
     });
 
-    res.status(200).json({ message: "Game created" });
+    res.status(200).json({ message: "Game created", data: { id: game.id } });
   } catch (error) {
     console.log(error);
     res.status(500).json({ message: "Internal server error" });

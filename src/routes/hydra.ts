@@ -14,7 +14,7 @@ matchesPub.start();
 
 const bridgeEngine = new BridgeEngine(matchesPub, hydraProvider);
 
-router.get("/hydra/utxos", (req: Request, res: Response) => {
+router.get("/hydra/utxos", async (req: Request, res: Response) => {
   if (req.query.address) {
     return res.send(
       hydraManager.utxos.filter(
@@ -22,11 +22,7 @@ router.get("/hydra/utxos", (req: Request, res: Response) => {
       )
     );
   } else if (req.query.txHash) {
-    return res.send(
-      hydraManager.utxos.filter(
-        (utxo) => utxo.input.txHash === req.query.txHash
-      )
-    );
+    return res.send(await hydraProvider.fetchUTxOs(req.query.txHash as string));
   } else {
     return res.send(hydraManager.utxos);
   }

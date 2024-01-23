@@ -44,7 +44,7 @@ function createGame(req, res) {
                     outputIndex: data.outputIndex,
                 },
             });
-            res.status(200).json({ message: "Game created" });
+            res.status(200).json({ message: "Game created", data: { id: game.id } });
         }
         catch (error) {
             console.log(error);

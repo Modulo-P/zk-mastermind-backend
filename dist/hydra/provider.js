@@ -43,6 +43,7 @@ class HydraProvider {
     fetchAddressUTxOs(address, asset) {
         return __awaiter(this, void 0, void 0, function* () {
             let utxos = [];
+            yield this._manager.fetchUTxOs();
             for (const utxo of this._manager.utxos) {
                 if (utxo.output.address === address) {
                     if (asset && utxo.output.amount.some((a) => a.unit.startsWith(asset))) {
@@ -79,6 +80,7 @@ class HydraProvider {
     }
     fetchUTxOs(hash) {
         return __awaiter(this, void 0, void 0, function* () {
+            yield this._manager.fetchUTxOs();
             return this._manager.utxos.filter((utxo) => utxo.input.txHash === hash);
         });
     }

@@ -23,17 +23,17 @@ const hydraProvider = new provider_1.HydraProvider(hydraManager);
 const matchesPub = new kupo_1.KupoMatchesPub("http://192.168.64.4:1442");
 matchesPub.start();
 const bridgeEngine = new engine_2.BridgeEngine(matchesPub, hydraProvider);
-router.get("/hydra/utxos", (req, res) => {
+router.get("/hydra/utxos", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     if (req.query.address) {
         return res.send(hydraManager.utxos.filter((utxo) => utxo.output.address === req.query.address));
     }
     else if (req.query.txHash) {
-        return res.send(hydraManager.utxos.filter((utxo) => utxo.input.txHash === req.query.txHash));
+        return res.send(yield hydraProvider.fetchUTxOs(req.query.txHash));
     }
     else {
         return res.send(hydraManager.utxos);
     }
-});
+}));
 router.post("/hydra/submitTx", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     console.log("submitTx", req.body.tx);
     try {

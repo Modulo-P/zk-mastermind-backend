@@ -16,11 +16,15 @@ class HydraWebsocketClient extends observer_1.HydraMessagePub {
             this._isOpen = true;
         });
         this._mainNode.on("close", () => {
+            console.log("Connection closed");
             this._isOpen = false;
         });
         this._mainNode.on("message", (data) => {
             const dataJson = JSON.parse(data.toString());
             this.notify(dataJson);
+        });
+        this._hydraNodes.forEach((node) => {
+            node.on("error", console.log);
         });
     }
     static getInstance() {

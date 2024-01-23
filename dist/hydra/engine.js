@@ -53,6 +53,7 @@ class HydraEngine {
         this.utxos = [];
         this.txPub = new HyrdaTxPub();
         this._cardanoProvider = new core_1.BlockfrostProvider(process.env.BLOCKFROST_PROJECT_ID);
+        this.start();
         this.ws.subscribe(new HydraUTxOsObserver(this));
         this.ws.subscribe(new HydraStatusObserver(this));
         this.ws.subscribe(new HydraErrorObserver(this));
@@ -147,6 +148,19 @@ class HydraEngine {
             return response;
         });
     }
+    fetchUTxOs() {
+        return __awaiter(this, void 0, void 0, function* () {
+            const response = new Promise((resolve, reject) => {
+                this.promises.push({
+                    command: { tag: "GetUTxO" },
+                    resolve,
+                    reject,
+                });
+            });
+            this.ws.sendCommand({ tag: "GetUTxO" });
+            return response;
+        });
+    }
     transformUTxO(utxo) {
         const value = { lovelace: 0 };
         utxo.output.amount.forEach((amount) => {
@@ -211,6 +225,17 @@ class HydraUTxOsObserver extends observer_js_1.HydraMessageObserver {
                     const utxos = yield (0, utils_js_1.convertHydraToMeshUTxOs)(message.snapshot.utxo);
                     saveUTxOs(utxos);
                     this._hydraEngine.utxos = utxos;
+                    break;
+                case "GetUTxOResponse":
+                    const utxosResponse = yield (0, utils_js_1.convertHydraToMeshUTxOs)(message.utxo);
+                    saveUTxOs(utxosResponse);
+                    this._hydraEngine.utxos = utxosResponse;
+                    for (const promise of this._hydraEngine.promises) {
+                        if (promise.command.tag === "GetUTxO") {
+                            promise.resolve(utxosResponse);
+                            this._hydraEngine.promises.splice(this._hydraEngine.promises.indexOf(promise), 1);
+                        }
+                    }
                     break;
             }
         });
