@@ -27,7 +27,7 @@ export function MatchesToUTxOs(
 
         if (!plutusData) {
           const datumResponse = await fetch(
-            "http://192.168.64.4:1442/datums/" + match.datum_hash
+            `${process.env.KUPO_URL}/datums/` + match.datum_hash
           );
           plutusData = (await datumResponse.json()).datum as string;
           datums.set(match.datum_hash, plutusData);

@@ -9,7 +9,7 @@ const router: Router = express.Router();
 const hydraManager = HydraEngine.getInstance();
 const hydraProvider = new HydraProvider(hydraManager);
 
-const matchesPub = new KupoMatchesPub("http://192.168.64.4:1442");
+const matchesPub = new KupoMatchesPub(process.env.KUPO_URL!);
 matchesPub.start();
 
 const bridgeEngine = new BridgeEngine(matchesPub, hydraProvider);
