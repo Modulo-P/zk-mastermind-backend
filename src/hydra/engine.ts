@@ -5,12 +5,13 @@ import blake2 from "blake2";
 import cbor from "cbor";
 import { PrismaClient } from "prisma/prisma-client";
 import { HydraUTxO, HydraWebsocketPromise } from "../types/hydra.js";
-import { HydraMessageObserver, HydraTxObserver } from "./observer.js";
+import { HydraTxObserver } from "./observer.js";
 import { convertHydraToMeshUTxOs } from "./utils.js";
-import { HydraWebsocketClient } from "./websocket.js";
+import { HydraConnection } from "./client/connection/hydra-connection.js";
+import { Observer, Publisher } from "../common/observer.js";
 
-export class HydraEngine {
-  private ws: HydraWebsocketClient = HydraWebsocketClient.getInstance();
+export class HydraEngine extends Publisher<string> {
+  private _wsPool: HydraConnection[] = [];
   private static _instance: HydraEngine;
 
   public promises: Array<HydraWebsocketPromise> = [];
@@ -20,25 +21,39 @@ export class HydraEngine {
   public txPub: HyrdaTxPub;
 
   private constructor() {
+    super();
+
     this.txPub = new HyrdaTxPub();
     this._cardanoProvider = new BlockfrostProvider(
       process.env.BLOCKFROST_PROJECT_ID!
     );
 
+    this._wsPool.push(
+      new HydraConnection(
+        `ws://${process.env.HYDRA_NODE_1_HOST}/?history=no&tx-output=cbor`
+      )
+    );
+    this._wsPool.push(
+      new HydraConnection(
+        `ws://${process.env.HYDRA_NODE_2_HOST}/?history=no&tx-output=cbor`
+      )
+    );
+
+    const ws = this._wsPool[0];
+    ws.subscribe(new HydraUTxOsObserver(this));
+    ws.subscribe(new HydraStatusObserver(this));
+    ws.subscribe(new HydraErrorObserver(this));
+    ws.subscribe(new HyrdaNewTxObserver(this));
+    ws.connect();
+
     this.start();
-
-    this.ws.subscribe(new HydraUTxOsObserver(this));
-    this.ws.subscribe(new HydraStatusObserver(this));
-    this.ws.subscribe(new HydraErrorObserver(this));
-    this.ws.subscribe(new HyrdaNewTxObserver(this));
   }
-
   static getInstance() {
     return this._instance || (this._instance = new HydraEngine());
   }
 
   public async start() {
-    while (!this.ws.isOpen()) {
+    while (!this._wsPool[0].isOpen()) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
 
@@ -51,7 +66,9 @@ export class HydraEngine {
         });
       });
 
-      this.ws.sendCommand({ tag: "Init", contestationPeriod: 120 });
+      this._wsPool[0].send(
+        JSON.stringify({ tag: "Init", contestationPeriod: 120 })
+      );
       try {
         await response;
       } catch (e) {
@@ -81,7 +98,9 @@ export class HydraEngine {
       if (utxos.length > 0) {
         commitTxUTxOs = this.transformUTxO(utxos[0]);
       } else {
-        throw new Error("No UTxOs found");
+        console.log("Please add funds to the wallet");
+        setTimeout(() => this.start(), 10000);
+        return;
       }
 
       console.log("UTXOS: ", JSON.stringify(commitTxUTxOs, null, 2));
@@ -144,7 +163,7 @@ export class HydraEngine {
       });
     });
 
-    this.ws.sendCommand({ tag: "NewTx", transaction });
+    this._wsPool[0].send(JSON.stringify({ tag: "NewTx", transaction }));
 
     return response;
   }
@@ -158,7 +177,7 @@ export class HydraEngine {
       });
     });
 
-    this.ws.sendCommand({ tag: "GetUTxO" });
+    this._wsPool[0].send(JSON.stringify({ tag: "GetUTxO" }));
 
     return response;
   }
@@ -213,19 +232,21 @@ function saveUTxOs(utxos: UTxO[]) {
   });
 }
 
-class HydraUTxOsObserver extends HydraMessageObserver {
-  async update(message: any) {
+class HydraUTxOsObserver extends Observer<string, HydraEngine> {
+  async update(data: string) {
+    const message = JSON.parse(data);
+
     switch (message.tag) {
       case "Greetings":
         if (message.snapshotUtxo) {
-          this._hydraEngine.utxos = await convertHydraToMeshUTxOs(
+          this._publisher.utxos = await convertHydraToMeshUTxOs(
             message.snapshotUtxo as HydraUTxO
           );
         }
         break;
       case "HeadIsOpen":
         if (message.utxo) {
-          this._hydraEngine.utxos = await convertHydraToMeshUTxOs(
+          this._publisher.utxos = await convertHydraToMeshUTxOs(
             message.utxo as HydraUTxO
           );
         }
@@ -234,20 +255,20 @@ class HydraUTxOsObserver extends HydraMessageObserver {
           message.snapshot.utxo as HydraUTxO
         );
         saveUTxOs(utxos);
-        this._hydraEngine.utxos = utxos;
+        this._publisher.utxos = utxos;
         break;
       case "GetUTxOResponse":
         const utxosResponse = await convertHydraToMeshUTxOs(
           message.utxo as HydraUTxO
         );
         saveUTxOs(utxosResponse);
-        this._hydraEngine.utxos = utxosResponse;
+        this._publisher.utxos = utxosResponse;
 
-        for (const promise of this._hydraEngine.promises) {
+        for (const promise of this._publisher.promises) {
           if (promise.command.tag === "GetUTxO") {
             promise.resolve(utxosResponse);
-            this._hydraEngine.promises.splice(
-              this._hydraEngine.promises.indexOf(promise),
+            this._publisher.promises.splice(
+              this._publisher.promises.indexOf(promise),
               1
             );
           }
@@ -257,28 +278,30 @@ class HydraUTxOsObserver extends HydraMessageObserver {
   }
 }
 
-class HydraStatusObserver extends HydraMessageObserver {
-  update(message: any): void {
+class HydraStatusObserver extends Observer<string, HydraEngine> {
+  async update(data: string) {
+    const message = JSON.parse(data);
     let status;
     if ((status = this.getStatus(message))) {
-      this._hydraEngine.status = status;
+      this._publisher.status = status;
       console.log("Head status: ", status);
     }
     if (message.tag === "HeadIsInitializing") {
-      this._hydraEngine.promises.forEach((p) => {
+      this._publisher.promises.forEach((p) => {
         if (p.command.tag === "Init") {
           p.resolve();
-          this._hydraEngine.promises.splice(
-            this._hydraEngine.promises.indexOf(p),
+          this._publisher.promises.splice(
+            this._publisher.promises.indexOf(p),
             1
           );
         }
       });
     }
     if (message.tag === "HeadIsAborted") {
-      this._hydraEngine.start();
+      this._publisher.start();
     }
   }
+
   getStatus(data: any): string | null {
     switch (data.tag) {
       case "Greetings":
@@ -299,14 +322,15 @@ class HydraStatusObserver extends HydraMessageObserver {
   }
 }
 
-class HydraErrorObserver extends HydraMessageObserver {
-  update(message: any): void {
+class HydraErrorObserver extends Observer<string, HydraEngine> {
+  async update(data: string) {
+    const message = JSON.parse(data);
     if (message.tag === "CommandFailed") {
-      this._hydraEngine.promises.forEach((p) => {
+      this._publisher.promises.forEach((p) => {
         if (p.command.tag === message.clientInput.tag) {
           p.reject(message);
-          this._hydraEngine.promises.splice(
-            this._hydraEngine.promises.indexOf(p),
+          this._publisher.promises.splice(
+            this._publisher.promises.indexOf(p),
             1
           );
         }
@@ -315,19 +339,21 @@ class HydraErrorObserver extends HydraMessageObserver {
   }
 }
 
-class HyrdaNewTxObserver extends HydraMessageObserver {
-  update(message: any): void {
+class HyrdaNewTxObserver extends Observer<string, HydraEngine> {
+  async update(data: string) {
+    const message = JSON.parse(data);
+
     switch (message.tag) {
       case "TxValid":
         const txCborValid = message.transaction.slice(6);
         const txHash = resolveTxHash(txCborValid);
-        this._hydraEngine.txPub.notify(txCborValid);
+        this._publisher.txPub.notify(txCborValid);
 
-        for (const promise of this._hydraEngine.promises) {
+        for (const promise of this._publisher.promises) {
           if (promise.id === txHash && promise.command.tag === "NewTx") {
             promise.resolve(txHash);
-            this._hydraEngine.promises.splice(
-              this._hydraEngine.promises.indexOf(promise),
+            this._publisher.promises.splice(
+              this._publisher.promises.indexOf(promise),
               1
             );
           }
@@ -336,11 +362,11 @@ class HyrdaNewTxObserver extends HydraMessageObserver {
       case "TxInvalid":
         const txCborInvalid = message.transaction.slice(6);
         const txHashInvalid = resolveTxHash(txCborInvalid);
-        for (const promise of this._hydraEngine.promises) {
+        for (const promise of this._publisher.promises) {
           if (promise.id === txHashInvalid && promise.command.tag === "NewTx") {
             promise.reject(message.validationError.reason);
-            this._hydraEngine.promises.splice(
-              this._hydraEngine.promises.indexOf(promise),
+            this._publisher.promises.splice(
+              this._publisher.promises.indexOf(promise),
               1
             );
           }

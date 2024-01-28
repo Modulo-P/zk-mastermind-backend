@@ -42,17 +42,19 @@ export class KupoMatchesPub {
   }
 
   private checkMatches = async () => {
-    const response = await fetch(`${this._kupoUrl}/matches`);
-    const matches = await response.json();
+    try {
+      const response = await fetch(`${this._kupoUrl}/matches`);
+      const matches = await response.json();
 
-    if (JSON.stringify(this._matches) !== JSON.stringify(matches)) {
-      this._matches = matches;
-      this._utxos = await MatchesToUTxOs(
-        this._matches.filter((m) => !m.spent_at),
-        this._datums
-      );
-      this.notify();
-    }
+      if (JSON.stringify(this._matches) !== JSON.stringify(matches)) {
+        this._matches = matches;
+        this._utxos = await MatchesToUTxOs(
+          this._matches.filter((m) => !m.spent_at),
+          this._datums
+        );
+        this.notify();
+      }
+    } catch (_) {}
   };
 
   subscribe(observer: MatchesObserver) {

@@ -484,23 +484,27 @@ class BridgeNewHydraOperationsObserver extends BridgeObserver {
 
           const tx = txBuilder.build_tx();
 
-          const txUnsigned = tx.to_hex();
-          const txSigned = await this._engine
-            .getCardanoWallet()
-            .signTx(txUnsigned, true);
-          const txHash = await this._engine
-            .getCardanoWallet()
-            .submitTx(txSigned);
+          try {
+            const txUnsigned = tx.to_hex();
+            const txSigned = await this._engine
+              .getCardanoWallet()
+              .signTx(txUnsigned, true);
+            const txHash = await this._engine
+              .getCardanoWallet()
+              .submitTx(txSigned);
 
-          const client = new PrismaClient();
+            const client = new PrismaClient();
 
-          await client.bridgeOperation.update({
-            data: {
-              state: "Submitted",
-              destinationTxHash: txHash,
-            },
-            where: { id: operation.id },
-          });
+            await client.bridgeOperation.update({
+              data: {
+                state: "Submitted",
+                destinationTxHash: txHash,
+              },
+              where: { id: operation.id },
+            });
+          } catch (error) {
+            console.log(error);
+          }
         }
       }
     }
