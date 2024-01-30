@@ -13,6 +13,7 @@ import bodyParser from "body-parser";
 
 try {
   console.log("Starting server...");
+  console.log("ZK Backend");
 
   dotenv.config();
 
