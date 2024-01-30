@@ -11,17 +11,21 @@ import hydraRoutes from "./routes/hydra";
 import gameRoutes from "./routes/games";
 import bodyParser from "body-parser";
 
-dotenv.config();
+try {
+  dotenv.config();
 
-const app: Express = express();
-const port = process.env.PORT;
+  const app: Express = express();
+  const port = process.env.PORT;
 
-app.use(cors());
-app.use(bodyParser.json());
+  app.use(cors());
+  app.use(bodyParser.json());
 
-app.use(hydraRoutes);
-app.use(gameRoutes);
+  app.use(hydraRoutes);
+  app.use(gameRoutes);
 
-app.listen(port, () => {
-  console.log(`⚡️[server]: Server is running at http://localhost:${port}`);
-});
+  app.listen(port, () => {
+    console.log(`⚡️[server]: Server is running at http://localhost:${port}`);
+  });
+} catch (e) {
+  console.log(e);
+}
