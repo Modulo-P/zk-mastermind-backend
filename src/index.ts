@@ -12,9 +12,6 @@ import gameRoutes from "./routes/games";
 import bodyParser from "body-parser";
 
 try {
-  console.log("Starting server...");
-  console.log("ZK Backend");
-
   dotenv.config();
 
   const app: Express = express();
