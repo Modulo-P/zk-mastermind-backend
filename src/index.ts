@@ -12,6 +12,8 @@ import gameRoutes from "./routes/games";
 import bodyParser from "body-parser";
 
 try {
+  console.log("Starting server...");
+
   dotenv.config();
 
   const app: Express = express();
