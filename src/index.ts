@@ -27,5 +27,12 @@ try {
     console.log(`⚡️[server]: Server is running at http://localhost:${port}`);
   });
 } catch (e) {
-  console.log(e);
+  if (e instanceof Error) {
+    console.log(e.message.substring(0, 100));
+    if (e.stack) {
+      console.log(e.stack);
+    }
+  } else {
+    console.log(e);
+  }
 }
