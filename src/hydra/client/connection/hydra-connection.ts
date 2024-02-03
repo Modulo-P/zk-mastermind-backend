@@ -8,11 +8,12 @@ export const CONNECTION_STATUS = {
   CONNECTED: "CONNECTED",
 } as const;
 
-export type ConnectionStatus = (typeof CONNECTION_STATUS)[keyof typeof CONNECTION_STATUS];
+export type ConnectionStatus =
+  (typeof CONNECTION_STATUS)[keyof typeof CONNECTION_STATUS];
 
 export class HydraConnection extends EventEmitter {
   _websocket: WebSocket | undefined;
-  _status: ConnectionStatus = "DISCONNECTED";
+  _status: ConnectionStatus = "IDLE";
   _wsUrl: string;
 
   constructor(wsUrl: string) {
@@ -21,7 +22,6 @@ export class HydraConnection extends EventEmitter {
   }
 
   async connect() {
-
     if (this._status !== "IDLE") {
       return;
     }
@@ -58,10 +58,7 @@ export class HydraConnection extends EventEmitter {
       return;
     }
 
-    if (
-      this._websocket &&
-      this._websocket.readyState === WebSocket.OPEN
-    ) {
+    if (this._websocket && this._websocket.readyState === WebSocket.OPEN) {
       this._websocket.close(1007);
     }
     this._status = "IDLE";

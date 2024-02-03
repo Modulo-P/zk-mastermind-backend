@@ -1,68 +1,55 @@
 import * as CSL from "@emurgo/cardano-serialization-lib-nodejs";
-import { BlockfrostProvider, UTxO, resolveTxHash } from "@meshsdk/core";
+import { BlockfrostProvider, UTxO } from "@meshsdk/core";
 import axios, { AxiosError } from "axios";
 import blake2 from "blake2";
 import cbor from "cbor";
-import { Publisher } from "../common/observer.js";
-import { HydraWebsocketPromise } from "../types/hydra.js";
-import { HydraConnection } from "./client/connection/hydra-connection.js";
+import { EventEmitter } from "stream";
+import { HydraClient } from "./client/hydra-client.js";
 
-export class HydraEngine extends Publisher<string> {
-  private _wsPool: HydraConnection[] = [];
+export class HydraEngine extends EventEmitter {
   private static _instance: HydraEngine;
-
-  public promises: Array<HydraWebsocketPromise> = [];
-  public status: string = "NotStarted";
   private _cardanoProvider: BlockfrostProvider;
-  public utxos: UTxO[] = [];
+  private _client: HydraClient;
 
   private constructor() {
     super();
     this._cardanoProvider = new BlockfrostProvider(
       process.env.BLOCKFROST_PROJECT_ID!
     );
-
-    this._wsPool.push(
-      new HydraConnection(
-        `ws://${process.env.HYDRA_NODE_1_HOST}/?history=no&tx-output=cbor`
-      )
-    );
-    this._wsPool.push(
-      new HydraConnection(
-        `ws://${process.env.HYDRA_NODE_2_HOST}/?history=no&tx-output=cbor`
-      )
+    this._client = new HydraClient(
+      `ws://${process.env.HYDRA_NODE_1_HOST}/?history=no&tx-output=cbor`
     );
 
-    const ws = this._wsPool[0];
-    ws.connect();
+    this._client.on("transaction", (tx) => {
+      this.emit("transaction", tx);
+    });
 
     this.start();
   }
+
   static getInstance() {
     return this._instance || (this._instance = new HydraEngine());
   }
 
+  get utxos(): UTxO[] {
+    return this._client.utxos;
+  }
+
   public async start() {
-    while (!this._wsPool[0].isOpen()) {
+    this._client.connect();
+    while (!this._client.isOpen()) {
       await new Promise((resolve) => setTimeout(resolve, 1000));
     }
 
-    if (["NotStarted", "Idle", "Final", "Initializing"].includes(this.status)) {
-      const response = new Promise((resolve, reject) => {
-        this.promises.push({
-          command: { tag: "Init" },
-          resolve,
-          reject,
-        });
-      });
-
-      this._wsPool[0].send(
-        JSON.stringify({ tag: "Init", contestationPeriod: 120 })
-      );
+    if (
+      ["DISCONNECTED", "IDLE", "FINAL", "INITIALIZING"].includes(
+        this._client.hydraStatus
+      )
+    ) {
       try {
-        await response;
+        await this._client.init(60);
       } catch (e) {
-        if (this.status !== "Initializing") {
+        if (this._client.hydraStatus !== "INITIALIZING") {
           console.error(e);
           throw e;
         } else {
@@ -143,34 +130,11 @@ export class HydraEngine extends Publisher<string> {
   }
 
   async submitTx(transaction: string): Promise<string> {
-    const txHash = resolveTxHash(transaction);
-
-    const response = new Promise<string>((resolve, reject) => {
-      this.promises.push({
-        command: { tag: "NewTx" },
-        id: txHash,
-        resolve,
-        reject,
-      });
-    });
-
-    this._wsPool[0].send(JSON.stringify({ tag: "NewTx", transaction }));
-
-    return response;
+    return this._client.submitTx(transaction);
   }
 
   async fetchUTxOs(): Promise<UTxO[]> {
-    const response = new Promise<UTxO[]>((resolve, reject) => {
-      this.promises.push({
-        command: { tag: "GetUTxO" },
-        resolve,
-        reject,
-      });
-    });
-
-    this._wsPool[0].send(JSON.stringify({ tag: "GetUTxO" }));
-
-    return response;
+    return this._client.fetchUTxOs();
   }
 
   transformUTxO(utxo: UTxO) {
@@ -203,7 +167,3 @@ export class HydraEngine extends Publisher<string> {
     };
   }
 }
-
-
-
-

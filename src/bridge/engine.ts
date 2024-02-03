@@ -48,7 +48,9 @@ export class BridgeEngine {
     );
 
     this._kupoMatches.subscribe(new KupoMatchesObserver(this));
-    new HydraMatchesObserver(HydraEngine.getInstance(), this);
+
+    const hydraEngine = HydraEngine.getInstance();
+    hydraEngine.on("transaction", this.onTransaction.bind(this));
 
     this._cardanoProvider = new BlockfrostProvider(
       process.env.BLOCKFROST_PROJECT_ID!
@@ -63,6 +65,11 @@ export class BridgeEngine {
           "582009ed97acc546fc5d85b28eb02e49e0f6d01de5f85da316eae83847c1a218ce45",
       },
     });
+  }
+
+  onTransaction(transaction: any): void {
+    const tx = CSL.Transaction.from_hex(transaction);
+    this.processHydraMatch(tx);
   }
 
   async processKupoMatches(matchesUTxOs: UTxO[]) {
@@ -99,18 +106,6 @@ class KupoMatchesObserver implements MatchesObserver {
 
   async update(context: KupoMatchesPub) {
     this._engine.processKupoMatches(context.getUTxOs());
-  }
-}
-
-class HydraMatchesObserver extends HydraTxObserver {
-  constructor(hyrdaEngine: HydraEngine, private _bridgeEngine: BridgeEngine) {
-    super(hyrdaEngine);
-    hyrdaEngine.txPub.subscribe(this);
-  }
-
-  update(transaction: any): void {
-    const tx = CSL.Transaction.from_hex(transaction);
-    this._bridgeEngine.processHydraMatch(tx);
   }
 }
 

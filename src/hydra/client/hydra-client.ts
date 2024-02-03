@@ -19,7 +19,6 @@ export const HYDRA_STATUS = {
 export type HydraStatus = (typeof HYDRA_STATUS)[keyof typeof HYDRA_STATUS];
 
 export class HydraClient extends EventEmitter {
-  private _hydraUrl: string;
   private _connection: HydraConnection;
   private _promises: HydraWebsocketPromise[] = [];
   private _utxos: UTxO[] = [];
@@ -27,12 +26,11 @@ export class HydraClient extends EventEmitter {
 
   constructor(hydraUrl: string) {
     super();
-    this._hydraUrl = hydraUrl;
-    this._connection = new HydraConnection(
-      `ws://${hydraUrl}/?history=no&tx-output=cbor`
-    );
+    this._connection = new HydraConnection(hydraUrl);
 
-    this._connection.on("message", this.processStatus);
+    this._connection.on("message", this.processStatus.bind(this));
+    this._connection.on("message", this.processUTxOS.bind(this));
+    this._connection.on("message", this.processCommands.bind(this));
   }
 
   get hydraStatus(): HydraStatus {
@@ -41,10 +39,6 @@ export class HydraClient extends EventEmitter {
 
   get utxos(): UTxO[] {
     return this._utxos;
-  }
-
-  set utxos(utxos: UTxO[]) {
-    this._utxos = utxos;
   }
 
   async connect() {
@@ -91,22 +85,23 @@ export class HydraClient extends EventEmitter {
     switch (message.tag) {
       case "Greetings":
         if (message.snapshotUtxo) {
-          this.utxos = await convertHydraToMeshUTxOs(
+          this._utxos = await convertHydraToMeshUTxOs(
             message.snapshotUtxo as HydraUTxO
           );
         }
         break;
       case "HeadIsOpen":
         if (message.utxo) {
-          this.utxos = await convertHydraToMeshUTxOs(
+          this._utxos = await convertHydraToMeshUTxOs(
             message.utxo as HydraUTxO
           );
         }
+        break;
       case "SnapshotConfirmed":
         const utxos = await convertHydraToMeshUTxOs(
           message.snapshot.utxo as HydraUTxO
         );
-        this.utxos = utxos;
+        this._utxos = utxos;
         break;
     }
   }
@@ -119,22 +114,19 @@ export class HydraClient extends EventEmitter {
       for (const promise of self._promises) {
         if (promise.id === id && promise.command.tag === command) {
           promise.resolve(id);
-          self._promises.splice(
-            self._promises.indexOf(promise),
-            1
-          );
+          self._promises.splice(self._promises.indexOf(promise), 1);
         }
       }
     }
 
     function rejectPromises(command: string, error: string, id?: string) {
       for (const promise of self._promises) {
-        if ((promise.id === id || id === undefined) && promise.command.tag === command) {
+        if (
+          (promise.id === id || id === undefined) &&
+          promise.command.tag === command
+        ) {
           promise.reject(error);
-          self._promises.splice(
-            self._promises.indexOf(promise),
-            1
-          );
+          self._promises.splice(self._promises.indexOf(promise), 1);
         }
       }
     }
@@ -165,5 +157,54 @@ export class HydraClient extends EventEmitter {
         rejectPromises(message.clientInput.tag, message);
         break;
     }
+  }
+
+  isOpen() {
+    return this._connection.isOpen();
+  }
+
+  async fetchUTxOs(): Promise<UTxO[]> {
+    const response = new Promise<UTxO[]>((resolve, reject) => {
+      this._promises.push({
+        command: { tag: "GetUTxO" },
+        resolve,
+        reject,
+      });
+    });
+
+    this._connection.send(JSON.stringify({ tag: "GetUTxO" }));
+
+    return response;
+  }
+
+  async submitTx(transaction: string): Promise<string> {
+    const txHash = resolveTxHash(transaction);
+
+    const response = new Promise<string>((resolve, reject) => {
+      this._promises.push({
+        command: { tag: "NewTx" },
+        id: txHash,
+        resolve,
+        reject,
+      });
+    });
+
+    this._connection.send(JSON.stringify({ tag: "NewTx", transaction }));
+
+    return response;
+  }
+
+  async init(contestationPeriod: number): Promise<string> {
+    const response = new Promise<string>((resolve, reject) => {
+      this._promises.push({
+        command: { tag: "Init" },
+        resolve,
+        reject,
+      });
+    });
+
+    this._connection.send(JSON.stringify({ tag: "Init", contestationPeriod }));
+
+    return response;
   }
 }
