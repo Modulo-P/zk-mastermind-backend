@@ -10,6 +10,7 @@ export class HydraEngine extends EventEmitter {
   private static _instance: HydraEngine;
   private _cardanoProvider: BlockfrostProvider;
   private _client: HydraClient;
+  private _confirmedTxs: Set<string> = new Set();
 
   private constructor() {
     super();
@@ -22,6 +23,10 @@ export class HydraEngine extends EventEmitter {
 
     this._client.on("transaction", (tx) => {
       this.emit("transaction", tx);
+    });
+
+    this._client.on("confirmedTransaction", (tx) => {
+      this._confirmedTxs.add(tx);
     });
 
     this.start();
@@ -135,6 +140,10 @@ export class HydraEngine extends EventEmitter {
 
   async fetchUTxOs(): Promise<UTxO[]> {
     return this._client.fetchUTxOs();
+  }
+
+  isTransactionConfirmed(hash: string): boolean {
+    return this._confirmedTxs.has(hash);
   }
 
   transformUTxO(utxo: UTxO) {

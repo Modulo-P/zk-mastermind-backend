@@ -4,11 +4,8 @@ import {
   AppWallet,
   Asset,
   BlockfrostProvider,
-  MeshTxBuilder,
   Mint,
-  NativeScript,
   PlutusScript,
-  Protocol,
   Quantity,
   Transaction,
   UTxO,
@@ -20,140 +17,71 @@ import {
 } from "@meshsdk/core";
 import { PrismaClient } from "prisma/prisma-client";
 import { HydraEngine } from "../hydra/engine";
-import { HydraTxObserver } from "../hydra/observer";
 import { HydraProvider } from "../hydra/provider";
-import { KupoMatchesPub, MatchesObserver } from "../kupo";
 import { BridgeOperation } from "../types/bridge";
-import { resetAddress, toValue, txBuilderConfig } from "./cardano";
+import { toValue, txBuilderConfig } from "./cardano";
+import { KupoClient } from "../kupo";
+import { client } from "../db";
 
 export class BridgeEngine {
-  private _kupoMatches: KupoMatchesPub;
-  private _bridgeNewOperationPub: BridgeNewOperationsPub;
-  private _bridgeService: BridgeService;
+  private _kupoClient: KupoClient;
+
+  private _hydraEngine: HydraEngine;
   private _hydraProvider: HydraProvider;
+  private _hydraWallet: AppWallet;
+
+  private _bridgeService: BridgeService;
+  private _operationsProcessor: OperationsProcessor;
+
   private _cardanoProvider: BlockfrostProvider;
   private _cardanoWallet: AppWallet;
 
-  constructor(kupoMatches: KupoMatchesPub, hydraProvider: HydraProvider) {
-    this._kupoMatches = kupoMatches;
-    this._hydraProvider = hydraProvider;
-    this._bridgeService = new BridgeService();
+  constructor(
+    kupoClient: KupoClient,
+    hydraEngine: HydraEngine,
+    cardanoProvider: BlockfrostProvider
+  ) {
+    this._kupoClient = kupoClient;
 
-    this._bridgeNewOperationPub = new BridgeNewOperationsPub();
-    this._bridgeNewOperationPub.subscribe(
-      new BridgeNewCardanoOperationsObserver(this)
-    );
-    this._bridgeNewOperationPub.subscribe(
-      new BridgeNewHydraOperationsObserver(this)
-    );
-
-    this._kupoMatches.subscribe(new KupoMatchesObserver(this));
-
-    const hydraEngine = HydraEngine.getInstance();
-    hydraEngine.on("transaction", this.onTransaction.bind(this));
-
-    this._cardanoProvider = new BlockfrostProvider(
-      process.env.BLOCKFROST_PROJECT_ID!
-    );
-    this._cardanoWallet = new AppWallet({
+    this._hydraEngine = hydraEngine;
+    this._hydraProvider = new HydraProvider(hydraEngine);
+    this._hydraWallet = new AppWallet({
       networkId: 0,
-      fetcher: this._cardanoProvider,
-      submitter: this._cardanoProvider,
+      fetcher: this._hydraProvider,
+      submitter: this._hydraProvider,
       key: {
         type: "cli",
         payment:
           "582009ed97acc546fc5d85b28eb02e49e0f6d01de5f85da316eae83847c1a218ce45",
       },
     });
-  }
 
-  onTransaction(transaction: any): void {
-    const tx = CSL.Transaction.from_hex(transaction);
-    this.processHydraMatch(tx);
-  }
+    this._bridgeService = new BridgeService(client);
 
-  async processKupoMatches(matchesUTxOs: UTxO[]) {
-    const operations = await this._bridgeService.processMatches(matchesUTxOs);
-    this._bridgeNewOperationPub.newOperations(operations);
-  }
+    this._cardanoProvider = cardanoProvider;
+    this._cardanoWallet = new AppWallet({
+      networkId: 0,
+      fetcher: this._cardanoProvider,
+      submitter: this._cardanoProvider,
+      key: {
+        type: "cli",
+        payment: "5820" + process.env.FUNDS_WALLET_PRIVATE_KEY!,
+      },
+    });
 
-  async processHydraMatch(transaction: CSL.Transaction) {
-    const operation = await this._bridgeService.processHydraMatch(transaction);
-
-    if (operation) {
-      this._bridgeNewOperationPub.newOperations([operation]);
+    if (!this._kupoClient.isRunning()) {
+      this._kupoClient.start();
     }
+
+    this._hydraEngine.on("transaction", this.onHydraTransaction.bind(this));
+    this._kupoClient.on("utxos", this.onKupoUTxOs.bind(this));
+
+    this._operationsProcessor = new OperationsProcessor(this);
   }
 
-  getHydraProvider() {
-    return this._hydraProvider;
-  }
+  async onHydraTransaction(txCbor: string) {
+    const transaction = CSL.Transaction.from_hex(txCbor);
 
-  getCardanoProvider() {
-    return this._cardanoProvider;
-  }
-
-  getCardanoWallet() {
-    return this._cardanoWallet;
-  }
-}
-
-class KupoMatchesObserver implements MatchesObserver {
-  private _engine: BridgeEngine;
-  constructor(engine: BridgeEngine) {
-    this._engine = engine;
-  }
-
-  async update(context: KupoMatchesPub) {
-    this._engine.processKupoMatches(context.getUTxOs());
-  }
-}
-
-class BridgeService {
-  private _prisma: PrismaClient;
-
-  constructor() {
-    this._prisma = new PrismaClient();
-  }
-
-  async processMatches(matchesUTxOs: UTxO[]) {
-    const result = [];
-    for (const match of matchesUTxOs) {
-      // 1. Check if match is already in database
-      const bridgeOperations = await this.findBridgeOperation(
-        "Cardano",
-        match.input.txHash,
-        match.input.outputIndex
-      );
-      // 2. If not, process match
-      if (bridgeOperations.length === 0) {
-        //  2a. Check if match is valid
-        if (this.isValidMatch(match)) {
-          //  2b. If valid, add match to database
-          const newBridgeOperation = await this._prisma.bridgeOperation.create({
-            data: {
-              origin: "Cardano",
-              originAddress: match.output.address,
-              originTxHash: match.input.txHash,
-              originOutputIndex: match.input.outputIndex,
-              amount: match.output.amount,
-              destination: "Hydra",
-              destinationAddress: this.getDestinationAddress(
-                match.output.plutusData!
-              ).to_bech32(),
-              destinationTxHash: "",
-              destinationOutputIndex: 0,
-              state: "Pending",
-            },
-          });
-          result.push(newBridgeOperation as any as BridgeOperation);
-        }
-      }
-    }
-    return result;
-  }
-
-  async processHydraMatch(transaction: CSL.Transaction) {
     const burningWrappedAsset = transaction
       .body()
       .mint()
@@ -204,26 +132,81 @@ class BridgeService {
     );
 
     if (destinationAddress) {
-      const operation: BridgeOperation =
-        (await this._prisma.bridgeOperation.create({
-          data: {
-            origin: "Hydra",
-            originAddress: address,
-            originTxHash: CSL.hash_transaction(transaction.body()).to_hex(),
-            originOutputIndex: 0,
-            amount: [
-              { unit: "lovelace", quantity: burningWrappedAsset.to_str() },
-            ],
-            destination: "Cardano",
-            destinationAddress: destinationAddress.to_bech32(),
-            destinationTxHash: "",
-            destinationOutputIndex: 0,
-            state: "Pending",
-          },
-        })) as any as BridgeOperation;
-
-      return operation;
+      await client.bridgeOperation.create({
+        data: {
+          origin: "Hydra",
+          originAddress: address,
+          originTxHash: CSL.hash_transaction(transaction.body()).to_hex(),
+          originOutputIndex: 0,
+          amount: [
+            { unit: "lovelace", quantity: burningWrappedAsset.to_str() },
+          ],
+          destination: "Cardano",
+          destinationAddress: destinationAddress.to_bech32(),
+          destinationTxHash: "",
+          destinationOutputIndex: 0,
+          state: "Pending",
+        },
+      });
     }
+  }
+
+  async onKupoUTxOs(utxos: UTxO[]) {
+    for (const utxo of utxos) {
+      // 1. Check if match is already in database
+      const bridgeOperations = await this._bridgeService.findBridgeOperation(
+        "Cardano",
+        utxo.input.txHash,
+        utxo.input.outputIndex
+      );
+      // 2. If not, process match
+      if (bridgeOperations.length === 0) {
+        //  2a. Check if match is valid
+        if (this._bridgeService.isValidMatch(utxo)) {
+          //  2b. If valid, add match to database
+          await client.bridgeOperation.create({
+            data: {
+              origin: "Cardano",
+              originAddress: utxo.output.address,
+              originTxHash: utxo.input.txHash,
+              originOutputIndex: utxo.input.outputIndex,
+              amount: utxo.output.amount,
+              destination: "Hydra",
+              destinationAddress: this._bridgeService
+                .getDestinationAddress(utxo.output.plutusData!)
+                .to_bech32(),
+              destinationTxHash: "",
+              destinationOutputIndex: 0,
+              state: "Pending",
+            },
+          });
+        }
+      }
+    }
+  }
+
+  getHydraProvider() {
+    return this._hydraProvider;
+  }
+
+  getCardanoProvider() {
+    return this._cardanoProvider;
+  }
+
+  getCardanoWallet() {
+    return this._cardanoWallet;
+  }
+
+  getHydraWallet() {
+    return this._hydraWallet;
+  }
+}
+
+class BridgeService {
+  private _prisma: PrismaClient;
+
+  constructor(prisma: PrismaClient) {
+    this._prisma = prisma;
   }
 
   async findBridgeOperation(
@@ -273,82 +256,39 @@ class BridgeService {
   }
 }
 
-abstract class BridgePub {
-  protected _observers: BridgeObserver[] = [];
+class OperationsProcessor {
+  private _timer: NodeJS.Timeout;
+  private _processing: boolean = false;
+  private _hydraWallet: AppWallet;
 
-  subscribe(observer: BridgeObserver) {
-    this._observers.push(observer);
+  constructor(private _engine: BridgeEngine) {
+    this._timer = setInterval(this.tick.bind(this), 10000);
+    this._hydraWallet = this._engine.getHydraWallet();
   }
 
-  unsubscribe(observer: BridgeObserver) {
-    this._observers = this._observers.filter((o) => o !== observer);
-  }
+  async tick() {
+    if (this._processing) {
+      return;
+    }
 
-  abstract notify(): any;
-}
+    this._processing = true;
+    const pendingOperations = await client.bridgeOperation.findMany({
+      where: { state: "Pending" },
+    });
 
-abstract class BridgeObserver {
-  protected _engine: BridgeEngine;
+    for (const operation of pendingOperations as BridgeOperation[]) {
+      await client.bridgeOperation.update({
+        data: { state: "Processing" },
+        where: { id: operation.id },
+      });
 
-  constructor(engine: BridgeEngine) {
-    this._engine = engine;
-  }
-  abstract update(context: BridgePub): void;
-}
-
-class BridgeNewOperationsPub extends BridgePub {
-  private _operations: BridgeOperation[] = [];
-
-  newOperations(operations: BridgeOperation[]) {
-    this._operations = operations;
-    this.notify();
-  }
-
-  getOperations() {
-    return this._operations;
-  }
-
-  notify() {
-    this._observers.forEach((observer) => observer.update(this));
-  }
-}
-
-class BridgeNewCardanoOperationsObserver extends BridgeObserver {
-  private _client: PrismaClient;
-
-  constructor(engine: BridgeEngine) {
-    super(engine);
-    this._client = new PrismaClient();
-  }
-  async update(context: BridgePub) {
-    if (context instanceof BridgeNewOperationsPub) {
-      const operations = context.getOperations();
-      for (const operation of operations) {
-        if (operation.state === "Pending" && operation.origin === "Cardano") {
-          console.log("New pending operation");
-          console.log(operation);
-
-          await this._client.bridgeOperation.update({
-            data: { state: "Submitting" },
-            where: { id: operation.id },
-          });
-
-          const appWallet = new AppWallet({
-            networkId: 0,
-            fetcher: this._engine.getHydraProvider(),
-            submitter: this._engine.getHydraProvider(),
-            key: {
-              type: "cli",
-              payment:
-                "582009ed97acc546fc5d85b28eb02e49e0f6d01de5f85da316eae83847c1a218ce45",
-            },
-          });
-
+      if (operation.origin === "Cardano") {
+        try {
           const utxos = await this._engine
             .getHydraProvider()
-            .fetchAddressUTxOs(appWallet.getPaymentAddress());
+            .fetchAddressUTxOs(this._hydraWallet.getPaymentAddress());
 
-          const tx = new Transaction({ initiator: appWallet });
+          const tx = new Transaction({ initiator: this._hydraWallet });
 
           const script: PlutusScript = {
             version: "V2",
@@ -358,6 +298,10 @@ class BridgeNewCardanoOperationsObserver extends BridgeObserver {
           const redeemer: Partial<Action> = {
             tag: "MINT",
           };
+
+          if (operation.amount === null || !Array.isArray(operation.amount)) {
+            return;
+          }
 
           const mint: Mint = {
             assetName: "HydrADA",
@@ -379,13 +323,15 @@ class BridgeNewCardanoOperationsObserver extends BridgeObserver {
             )!.quantity,
           };
 
-          tx.setCollateral([
-            utxos.filter(
-              (utxo: UTxO) =>
-                utxo.output.amount.length === 1 &&
-                utxo.output.amount[0].unit === "lovelace"
-            )[0],
-          ]);
+          const collateralUTxO = utxos.filter(
+            (utxo: UTxO) =>
+              utxo.output.amount.length === 1 &&
+              utxo.output.amount[0].unit === "lovelace"
+          )[0];
+
+          console.log("Collateral UTxO: ", collateralUTxO);
+
+          tx.setCollateral([collateralUTxO]);
           tx.mintAsset(script, mint, redeemer);
           tx.sendAssets(operation.destinationAddress, [
             { unit: "lovelace", quantity: "20000000" },
@@ -393,115 +339,160 @@ class BridgeNewCardanoOperationsObserver extends BridgeObserver {
           tx.sendLovelace(operation.destinationAddress, "15000000");
           tx.sendLovelace(operation.destinationAddress, "5000000");
 
-          try {
-            const txUnsigned = await tx.build();
-            const txSigned = await appWallet.signTx(txUnsigned);
-            const txHash = await appWallet.submitTx(txSigned);
+          await client.bridgeOperation.update({
+            data: { state: "Submitting" },
+            where: { id: operation.id },
+          });
 
-            await this._client.bridgeOperation.update({
-              data: {
-                state: "Confirmed",
-                destinationTxHash: txHash,
-                destinationOutputIndex: 0,
-              },
-              where: { id: operation.id },
+          const txUnsigned = await tx.build();
+          const txSigned = await this._hydraWallet.signTx(txUnsigned);
+          const txHash = await this._hydraWallet.submitTx(txSigned);
+
+          await client.bridgeOperation.update({
+            data: {
+              state: "Submitted",
+              destinationTxHash: txHash,
+              destinationOutputIndex: 0,
+            },
+            where: { id: operation.id },
+          });
+
+          await new Promise<void>((resolve, reject) => {
+            setTimeout(() => {
+              reject(`Timeout confirming transaction ${txHash}`);
+            }, 300_000);
+            this._engine.getHydraProvider().onTxConfirmed(txHash, async () => {
+              await client.bridgeOperation.update({
+                data: {
+                  state: "Confirmed",
+                  destinationTxHash: txHash,
+                  destinationOutputIndex: 0,
+                },
+                where: { id: operation.id },
+              });
+              resolve();
             });
-          } catch (error) {
-            console.log(error);
-          }
+          });
+        } catch (error) {
+          console.log(error);
+          await client.bridgeOperation.update({
+            data: {
+              state: "Failed",
+            },
+            where: { id: operation.id },
+          });
         }
       }
-    }
-  }
-}
 
-class BridgeNewHydraOperationsObserver extends BridgeObserver {
-  async update(context: BridgePub) {
-    if (context instanceof BridgeNewOperationsPub) {
-      const operations = context.getOperations();
-      for (const operation of operations) {
-        if (operation.state === "Pending" && operation.origin === "Hydra") {
-          const nativeScript = CSL.NativeScript.new_script_pubkey(
-            CSL.ScriptPubkey.new(
-              CSL.Ed25519KeyHash.from_hex(
-                "b5b425aa8b18c537da26366fe4da1c709440daa7878ac25c63d89086"
-              )
-            )
-          );
-
-          const utxos = await this._engine
-            .getCardanoProvider()
-            .fetchAddressUTxOs(
-              "addr_test1wz0c73j3czfd77gtg58jtm2dz8fz7yrxzylv7dc67kew5tqk4uqc9"
-            );
-
-          const assetMap = new Map<Unit, Quantity>();
-
-          assetMap.set(
-            "lovelace",
-            operation.amount.filter((asset) => asset.unit === "lovelace")[0]
-              .quantity
-          );
-
-          const selectedUtxos = keepRelevant(assetMap, utxos);
-
-          const txBuilder = CSL.TransactionBuilder.new(txBuilderConfig);
-
-          for (const utxo of selectedUtxos) {
-            const txInput = CSL.TransactionInput.new(
-              CSL.TransactionHash.from_hex(utxo.input.txHash),
-              utxo.input.outputIndex
-            );
-            txBuilder.add_native_script_input(
-              nativeScript,
-              txInput,
-              toValue(utxo.output.amount)
-            );
-          }
-
-          const output = CSL.TransactionOutput.new(
-            CSL.Address.from_bech32(operation.destinationAddress),
-            toValue(operation.amount)
-          );
-          txBuilder.add_output(output);
-
-          txBuilder.add_change_if_needed(
-            CSL.Address.from_bech32(
-              "addr_test1wz0c73j3czfd77gtg58jtm2dz8fz7yrxzylv7dc67kew5tqk4uqc9"
-            )
-          );
-
-          txBuilder.add_required_signer(
+      if (operation.origin === "Hydra") {
+        const nativeScript = CSL.NativeScript.new_script_pubkey(
+          CSL.ScriptPubkey.new(
             CSL.Ed25519KeyHash.from_hex(
               "b5b425aa8b18c537da26366fe4da1c709440daa7878ac25c63d89086"
             )
+          )
+        );
+
+        const utxos = await this._engine
+          .getCardanoProvider()
+          .fetchAddressUTxOs(
+            "addr_test1wz0c73j3czfd77gtg58jtm2dz8fz7yrxzylv7dc67kew5tqk4uqc9"
           );
 
-          const tx = txBuilder.build_tx();
+        const assetMap = new Map<Unit, Quantity>();
 
-          try {
-            const txUnsigned = tx.to_hex();
-            const txSigned = await this._engine
-              .getCardanoWallet()
-              .signTx(txUnsigned, true);
-            const txHash = await this._engine
-              .getCardanoWallet()
-              .submitTx(txSigned);
+        assetMap.set(
+          "lovelace",
+          operation.amount.filter((asset) => asset.unit === "lovelace")[0]
+            .quantity
+        );
 
-            const client = new PrismaClient();
+        const selectedUtxos = keepRelevant(assetMap, utxos);
 
-            await client.bridgeOperation.update({
-              data: {
-                state: "Submitted",
-                destinationTxHash: txHash,
-              },
-              where: { id: operation.id },
-            });
-          } catch (error) {
-            console.log(error);
-          }
+        const txBuilder = CSL.TransactionBuilder.new(txBuilderConfig);
+
+        for (const utxo of selectedUtxos) {
+          const txInput = CSL.TransactionInput.new(
+            CSL.TransactionHash.from_hex(utxo.input.txHash),
+            utxo.input.outputIndex
+          );
+          txBuilder.add_native_script_input(
+            nativeScript,
+            txInput,
+            toValue(utxo.output.amount)
+          );
+        }
+
+        const output = CSL.TransactionOutput.new(
+          CSL.Address.from_bech32(operation.destinationAddress),
+          toValue(operation.amount)
+        );
+        txBuilder.add_output(output);
+
+        txBuilder.add_change_if_needed(
+          CSL.Address.from_bech32(
+            "addr_test1wz0c73j3czfd77gtg58jtm2dz8fz7yrxzylv7dc67kew5tqk4uqc9"
+          )
+        );
+
+        txBuilder.add_required_signer(
+          CSL.Ed25519KeyHash.from_hex(
+            "b5b425aa8b18c537da26366fe4da1c709440daa7878ac25c63d89086"
+          )
+        );
+
+        const tx = txBuilder.build_tx();
+
+        try {
+          await client.bridgeOperation.update({
+            data: { state: "Submitting" },
+            where: { id: operation.id },
+          });
+
+          const txUnsigned = tx.to_hex();
+          const txSigned = await this._engine
+            .getCardanoWallet()
+            .signTx(txUnsigned, true);
+          const txHash = await this._engine
+            .getCardanoWallet()
+            .submitTx(txSigned);
+
+          await client.bridgeOperation.update({
+            data: {
+              state: "Submitted",
+              destinationTxHash: txHash,
+            },
+            where: { id: operation.id },
+          });
+
+          await new Promise<void>((resolve, reject) => {
+            setTimeout(() => {
+              reject(`Timeout confirming transaction ${txHash}`);
+            }, 300_000);
+            this._engine
+              .getCardanoProvider()
+              .onTxConfirmed(txHash, async () => {
+                await client.bridgeOperation.update({
+                  data: {
+                    state: "Confirmed",
+                    destinationTxHash: txHash,
+                    destinationOutputIndex: 0,
+                  },
+                  where: { id: operation.id },
+                });
+                resolve();
+              });
+          });
+        } catch (error) {
+          console.log(error);
+
+          await client.bridgeOperation.update({
+            data: { state: "Failed" },
+            where: { id: operation.id },
+          });
         }
       }
     }
+    this._processing = false;
   }
 }

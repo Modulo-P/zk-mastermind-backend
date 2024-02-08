@@ -24,22 +24,12 @@ export class HydraProvider implements IFetcher, ISubmitter, IListener {
     const checkTx = setInterval(() => {
       if (attempts >= limit) clearInterval(checkTx);
 
-      this.fetchTxInfo(txHash)
-        .then((txInfo) => {
-          this.fetchBlockInfo(txInfo.block)
-            .then((blockInfo) => {
-              if (blockInfo?.confirmations > 0) {
-                clearInterval(checkTx);
-                callback();
-              }
-            })
-            .catch(() => {
-              attempts += 1;
-            });
-        })
-        .catch(() => {
-          attempts += 1;
-        });
+      if (this._manager.isTransactionConfirmed(txHash)) {
+        clearInterval(checkTx);
+        callback();
+      } else {
+        attempts += 1;
+      }
     }, 1_000);
   }
 

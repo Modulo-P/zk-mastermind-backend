@@ -1,10 +1,10 @@
 import { UTxO } from "@meshsdk/core";
 import { TransactionOutput } from "../types/kupo";
 import { MatchesToUTxOs } from "./utils";
+import { EventEmitter } from "stream";
 
-export class KupoMatchesPub {
+export class KupoClient extends EventEmitter {
   private _kupoUrl: string;
-  private _observers: MatchesObserver[] = [];
   private _checkTimer: NodeJS.Timeout | null = null;
 
   private _matches: TransactionOutput[] = [];
@@ -12,6 +12,7 @@ export class KupoMatchesPub {
   private _datums: Map<string, string> = new Map();
 
   constructor(kupoUrl: string) {
+    super();
     this._kupoUrl = kupoUrl;
   }
 
@@ -32,15 +33,6 @@ export class KupoMatchesPub {
     }
   }
 
-  clone() {
-    const publisher = new KupoMatchesPub(this._kupoUrl);
-    publisher._matches = this._matches;
-    publisher._utxos = this._utxos;
-    publisher._datums = this._datums;
-
-    return publisher;
-  }
-
   private checkMatches = async () => {
     try {
       const response = await fetch(`${this._kupoUrl}/matches`);
@@ -52,22 +44,11 @@ export class KupoMatchesPub {
           this._matches.filter((m) => !m.spent_at),
           this._datums
         );
-        this.notify();
+        this.emit("matches", this._matches);
+        this.emit("utxos", this._utxos);
       }
     } catch (_) {}
   };
-
-  subscribe(observer: MatchesObserver) {
-    this._observers.push(observer);
-  }
-
-  unsubscribe(observer: MatchesObserver) {
-    this._observers = this._observers.filter((o) => o !== observer);
-  }
-
-  private notify() {
-    this._observers.forEach((observer) => observer.update(this.clone()));
-  }
 
   getMatches() {
     return this._matches;
@@ -76,8 +57,4 @@ export class KupoMatchesPub {
   getUTxOs() {
     return this._utxos;
   }
-}
-
-export interface MatchesObserver {
-  update(context: KupoMatchesPub): Promise<void>;
 }

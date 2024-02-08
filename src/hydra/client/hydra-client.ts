@@ -102,6 +102,17 @@ export class HydraClient extends EventEmitter {
           message.snapshot.utxo as HydraUTxO
         );
         this._utxos = utxos;
+
+        if (
+          message.snapshot.confirmedTransactions &&
+          Array.isArray(message.snapshot.confirmedTransactions) &&
+          message.snapshot.confirmedTransactions.length > 0
+        ) {
+          for (const hash of message.snapshot
+            .confirmedTransactions as string[]) {
+            this.emit("confirmedTransaction", hash);
+          }
+        }
         break;
     }
   }
@@ -184,7 +195,10 @@ export class HydraClient extends EventEmitter {
       this._promises.push({
         command: { tag: "NewTx" },
         id: txHash,
-        resolve,
+        resolve: (result: any) => {
+          resolve(result);
+          this.emit("transaction", transaction);
+        },
         reject,
       });
     });
