@@ -1,22 +1,33 @@
 import * as CSL from "@emurgo/cardano-serialization-lib-nodejs";
-import { BlockfrostProvider, UTxO } from "@meshsdk/core";
+import { BlockfrostProvider, UTxO, resolveTxHash } from "@meshsdk/core";
 import axios, { AxiosError } from "axios";
 import blake2 from "blake2";
 import cbor from "cbor";
 import { EventEmitter } from "stream";
 import { HydraClient } from "./client/hydra-client.js";
 
+interface TransactionJob {
+  transaction: string;
+  promise: Promise<string> | null;
+  resolve: (value: string) => void;
+  reject: (reason: any) => void;
+  submitted: boolean;
+}
+
 export class HydraEngine extends EventEmitter {
   private static _instance: HydraEngine;
   private _cardanoProvider: BlockfrostProvider;
   private _client: HydraClient;
   private _confirmedTxs: Set<string> = new Set();
+  private _transactions: Map<string, TransactionJob> = new Map();
+  private _transactionProcessor: TransactionProcessor;
 
   private constructor() {
     super();
     this._cardanoProvider = new BlockfrostProvider(
       process.env.BLOCKFROST_PROJECT_ID!
     );
+
     this._client = new HydraClient(
       `ws://${process.env.HYDRA_NODE_1_HOST}/?history=no&tx-output=cbor`
     );
@@ -28,6 +39,11 @@ export class HydraEngine extends EventEmitter {
     this._client.on("confirmedTransaction", (tx) => {
       this._confirmedTxs.add(tx);
     });
+
+    this._transactionProcessor = new TransactionProcessor(
+      this._transactions,
+      this._client
+    );
 
     this.start();
   }
@@ -135,11 +151,33 @@ export class HydraEngine extends EventEmitter {
   }
 
   async submitTx(transaction: string): Promise<string> {
-    return this._client.submitTx(transaction);
+    const hash = resolveTxHash(transaction);
+    if (
+      !this._transactions.has(hash) ||
+      this._transactions.get(hash)!.promise === null
+    ) {
+      const promise = new Promise<string>((resolve, reject) => {
+        this._transactions.set(hash, {
+          transaction,
+          promise: null,
+          resolve,
+          reject,
+          submitted: false,
+        });
+      });
+      this._transactions.get(hash)!.promise = promise;
+      return promise;
+    } else {
+      return this._transactions.get(hash)!.promise!;
+    }
   }
 
   async fetchUTxOs(): Promise<UTxO[]> {
-    return this._client.fetchUTxOs();
+    if (this._client.hydraStatus === "OPEN") {
+      return this._client.fetchUTxOs();
+    } else {
+      return this._client.utxos;
+    }
   }
 
   isTransactionConfirmed(hash: string): boolean {
@@ -174,5 +212,38 @@ export class HydraEngine extends EventEmitter {
         value,
       },
     };
+  }
+}
+
+class TransactionProcessor {
+  private _timer: NodeJS.Timeout;
+  private _processing: boolean = false;
+  constructor(
+    private _transactions: Map<string, TransactionJob>,
+    private _client: HydraClient
+  ) {
+    this._timer = setInterval(this.tick.bind(this), 1000);
+  }
+
+  tick() {
+    if (!this._processing) {
+      this._processing = true;
+      for (const [hash, job] of this._transactions) {
+        if (!job.submitted && this._client.hydraStatus === "OPEN") {
+          this._client
+            .submitTx(job.transaction)
+            .then((hash) => {
+              this._transactions.delete(hash);
+              job.resolve(hash);
+            })
+            .catch((e) => {
+              this._transactions.delete(hash);
+              job.reject(e);
+            });
+          job.submitted = true;
+        }
+      }
+      this._processing = false;
+    }
   }
 }

@@ -71,6 +71,7 @@ export class HydraConnection extends EventEmitter {
 
     if (this._status === "CONNECTED") {
       this._status = "CONNECTING";
+      this.emit("close", error);
     }
 
     console.log(`Error: ${error}`);

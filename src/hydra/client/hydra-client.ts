@@ -28,6 +28,15 @@ export class HydraClient extends EventEmitter {
     super();
     this._connection = new HydraConnection(hydraUrl);
 
+    this._connection.on("close", (code) => {
+      if (this._status !== "DISCONNECTED") {
+        if (this._connection._status === "CONNECTING") {
+          this._status = "CONNECTING";
+        }
+      }
+      this.emit("close", code);
+    });
+
     this._connection.on("message", this.processStatus.bind(this));
     this._connection.on("message", this.processUTxOS.bind(this));
     this._connection.on("message", this.processCommands.bind(this));
