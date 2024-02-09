@@ -14,7 +14,8 @@ try {
   const port = process.env.PORT;
 
   app.use(cors());
-  app.use(bodyParser.json());
+  app.use(bodyParser.json({limit: '1mb'}));
+  app.use(bodyParser.urlencoded({ extended: true, limit: '1mb' }));
 
   app.use(hydraRoutes);
   app.use(gameRoutes);
