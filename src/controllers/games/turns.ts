@@ -1,6 +1,5 @@
 import { Request, Response } from "express";
 import { client } from "../../db";
-import { Turn } from "../../types/game";
 
 export async function createTurn(req: Request, res: Response) {
   try {
@@ -31,7 +30,7 @@ export async function createTurn(req: Request, res: Response) {
     });
 
     if (turn.turnNumber === 1) {
-      game.codeBreaker = data.codeBreaker;
+      game.codeBreakerAddress = data.codeBreaker;
       game.state = "STARTED";
     }
     game.currentTurn = turn.turnNumber;
@@ -39,7 +38,11 @@ export async function createTurn(req: Request, res: Response) {
     game.txHash = turn.txHash;
     game.outputIndex = turn.outputIndex;
 
-    await client.game.update({ data: game, where: { id: game.id } });
+    await client.game.update({
+      data: game,
+      where: { id: game.id },
+      include: { codeMaster: true, codeBreaker: true },
+    });
 
     res.status(200).json({
       message: "Turn created",

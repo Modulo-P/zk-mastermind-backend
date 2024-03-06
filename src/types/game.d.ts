@@ -1,7 +1,7 @@
 export interface Game {
   id: string;
-  codeMaster: string;
-  codeBreaker: string;
+  codeMaster: User;
+  codeBreaker: User;
   solutionHash: string;
   adaAmount: string;
   txHash: string;

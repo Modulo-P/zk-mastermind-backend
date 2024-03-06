@@ -39,24 +39,27 @@ model BridgeOperation {
 }
 
 model Game {
-  id           Int     @id @default(autoincrement())
-  codeMaster   String
-  codeBreaker  String?
-  solutionHash String
-  adaAmount    String
-  txHash       String
-  outputIndex  Int
-  currentTurn  Int
-  currentDatum String
-  state        String
-  turns        Turn[]
+  id                 Int     @id @default(autoincrement())
+  codeMaster         User    @relation("Game_codeMasterToUser", fields: [codeMasterAddress], references: [address])
+  codeMasterAddress  String
+  codeBreaker        User?   @relation("Game_codeBreakerToUser", fields: [codeBreakerAddress], references: [address])
+  codeBreakerAddress String?
+  solutionHash       String
+  adaAmount          String
+  txHash             String
+  outputIndex        Int
+  currentTurn        Int
+  currentDatum       String
+  state              String
+  turns              Turn[]
+  userId             Int?
 
   @@unique([txHash, outputIndex])
 }
 
 model Turn {
   id            Int    @id @default(autoincrement())
-  game          Game   @relation(fields: [gameId], references: [id])
+  game          Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
   gameId        Int
   turnNumber    Int
   player        String
@@ -66,4 +69,12 @@ model Turn {
   datum         String
   txHash        String
   outputIndex   Int
+}
+
+model User {
+  id                     Int    @id @default(autoincrement())
+  address                String @unique
+  nickname               String
+  Game_codeMasterToUser  Game[] @relation("Game_codeMasterToUser")
+  Game_codeBreakerToUser Game[] @relation("Game_codeBreakerToUser")
 }

@@ -13,7 +13,7 @@ export async function createGame(req: Request, res: Response) {
 
     const game = await client.game.create({
       data: {
-        codeMaster: data.codeMaster,
+        codeMasterAddress: data.codeMasterAddress,
         adaAmount: data.adaAmount,
         solutionHash: data.solutionHash,
         txHash: data.txHash,
@@ -24,7 +24,7 @@ export async function createGame(req: Request, res: Response) {
       },
     });
 
-    const turn = await client.turn.create({
+    await client.turn.create({
       data: {
         blackPegs: 0,
         whitePegs: 0,
@@ -51,7 +51,7 @@ export async function updateGame(req: Request, res: Response) {
 
     await client.game.update({
       data: {
-        codeMaster: data.codeMaster,
+        codeMasterAddress: data.codeMasterAddress,
         adaAmount: data.adaAmount,
         solutionHash: data.solutionHash,
         txHash: data.txHash,
@@ -78,7 +78,7 @@ export async function getGames(req: Request, res: Response) {
       where: {
         id: Number(req.query.id),
       },
-      include: { turns: true },
+      include: { codeBreaker: true, codeMaster: true, turns: true },
     });
 
     if (!game) {
@@ -88,5 +88,9 @@ export async function getGames(req: Request, res: Response) {
     return res.send(game);
   }
 
-  return res.send(await client.game.findMany());
+  return res.send(
+    await client.game.findMany({
+      include: { codeBreaker: true, codeMaster: true },
+    })
+  );
 }
