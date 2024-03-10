@@ -84,7 +84,7 @@ export class HydraEngine extends EventEmitter {
       const publicKey = privateKey.to_public();
       const address = CSL.EnterpriseAddress.new(
         0,
-        CSL.StakeCredential.from_keyhash(publicKey.hash())
+        CSL.Credential.from_keyhash(publicKey.hash())
       );
       console.log("Funds address: ", address.to_address().to_bech32());
 
@@ -151,7 +151,9 @@ export class HydraEngine extends EventEmitter {
   }
 
   async submitTx(transaction: string): Promise<string> {
-    const hash = resolveTxHash(transaction);
+    const hash = CSL.hash_transaction(
+      CSL.Transaction.from_hex(transaction).body()
+    ).to_hex();
     if (
       !this._transactions.has(hash) ||
       this._transactions.get(hash)!.promise === null

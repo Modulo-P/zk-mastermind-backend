@@ -107,14 +107,14 @@ export class BridgeEngine {
     if (!firstVkey) {
       return;
     }
-    const pKeyHash = CSL.StakeCredential.from_keyhash(firstVkey).to_keyhash();
+    const pKeyHash = CSL.Credential.from_keyhash(firstVkey).to_keyhash();
 
     if (!pKeyHash) {
       return;
     }
     const address = CSL.EnterpriseAddress.new(
       0,
-      CSL.StakeCredential.from_keyhash(pKeyHash)
+      CSL.Credential.from_keyhash(pKeyHash)
     )
       .to_address()
       .to_bech32();

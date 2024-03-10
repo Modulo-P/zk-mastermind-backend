@@ -3,6 +3,7 @@ import { HydraUTxO, HydraWebsocketPromise } from "../../types/hydra";
 import { HydraConnection } from "./connection/hydra-connection";
 import { UTxO, resolveTxHash } from "@meshsdk/core";
 import { convertHydraToMeshUTxOs } from "../utils";
+import * as CSL from "@emurgo/cardano-serialization-lib-nodejs";
 
 export const HYDRA_STATUS = {
   IDLE: "IDLE",
@@ -198,7 +199,9 @@ export class HydraClient extends EventEmitter {
   }
 
   async submitTx(transaction: string): Promise<string> {
-    const txHash = resolveTxHash(transaction);
+    const txHash = CSL.hash_transaction(
+      CSL.Transaction.from_hex(transaction).body()
+    ).to_hex();
 
     const response = new Promise<string>((resolve, reject) => {
       this._promises.push({
