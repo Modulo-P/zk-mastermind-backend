@@ -25,8 +25,13 @@ export class HydraEngine extends EventEmitter {
   private constructor() {
     super();
     this._cardanoProvider = new BlockfrostProvider(
-      process.env.BLOCKFROST_PROJECT_ID!
+      "https://cardano-sanchonet.blockfrost.io"
     );
+
+    this._cardanoProvider._axiosInstance = axios.create({
+      baseURL: "https://cardano-sanchonet.blockfrost.io/api/v0",
+      headers: { project_id: process.env.BLOCKFROST_PROJECT_ID },
+    });
 
     this._client = new HydraClient(
       `ws://${process.env.HYDRA_NODE_1_HOST}/?history=no&tx-output=cbor`
@@ -126,10 +131,10 @@ export class HydraEngine extends EventEmitter {
           privateKey
         );
         vkeyWitnesses!.add(vkeyWitness);
-        witnesses.set_vkeys(vkeyWitnesses!);
+        // witnesses.set_vkeys(vkeyWitnesses!);
         const signedTx = (commitTx.cborHex as string).replace(
-          tx.witness_set().to_hex(),
-          witnesses.to_hex()
+          tx.witness_set().vkeys()!.to_hex(),
+          vkeyWitnesses!.to_hex()
         );
 
         let txHash = await this._cardanoProvider.submitTx(signedTx);
