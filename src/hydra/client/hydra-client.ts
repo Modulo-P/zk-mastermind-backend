@@ -3,6 +3,7 @@ import { HydraUTxO, HydraWebsocketPromise } from "../../types/hydra";
 import { HydraConnection } from "./connection/hydra-connection";
 import { UTxO, resolveTxHash } from "@meshsdk/core";
 import { convertHydraToMeshUTxOs } from "../utils";
+import { unwrapCBOR } from "../../common/blockchain";
 
 export const HYDRA_STATUS = {
   IDLE: "IDLE",
@@ -163,13 +164,13 @@ export class HydraClient extends EventEmitter {
         resolvePromises("GetUTxO");
         break;
       case "TxValid":
-        const txCborValid = message.transaction.slice(6);
+        const txCborValid = unwrapCBOR(message.transaction);
         const txHash = resolveTxHash(txCborValid);
         this.emit("tx", txCborValid);
         resolvePromises("NewTx", txHash);
         break;
       case "TxInvalid":
-        const txCborInvalid = message.transaction.slice(6);
+        const txCborInvalid = unwrapCBOR(message.transaction);
         const txHashInvalid = resolveTxHash(txCborInvalid);
         rejectPromises("NewTx", message.validationError.reason, txHashInvalid);
         break;
