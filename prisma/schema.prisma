@@ -53,22 +53,24 @@ model Game {
   state              String
   turns              Turn[]
   userId             Int?
+  expirationTime     String
 
   @@unique([txHash, outputIndex])
 }
 
 model Turn {
-  id            Int    @id @default(autoincrement())
-  game          Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
-  gameId        Int
-  turnNumber    Int
-  player        String
-  guessSequence Json
-  blackPegs     Int
-  whitePegs     Int
-  datum         String
-  txHash        String
-  outputIndex   Int
+  id             Int    @id @default(autoincrement())
+  game           Game   @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  gameId         Int
+  turnNumber     Int
+  player         String
+  guessSequence  Json
+  blackPegs      Int
+  whitePegs      Int
+  datum          String
+  txHash         String
+  outputIndex    Int
+  expirationTime String
 }
 
 model User {

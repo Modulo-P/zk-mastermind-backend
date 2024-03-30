@@ -26,6 +26,7 @@ export async function createTurn(req: Request, res: Response) {
         gameId: game.id,
         txHash: data.txHash,
         outputIndex: data.outputIndex,
+        expirationTime: data.expirationTime,
       },
     });
 
@@ -37,6 +38,7 @@ export async function createTurn(req: Request, res: Response) {
     game.currentDatum = turn.datum;
     game.txHash = turn.txHash;
     game.outputIndex = turn.outputIndex;
+    game.expirationTime = turn.expirationTime;
 
     await client.game.update({
       data: game,

@@ -1,5 +1,4 @@
 import { Request, Response } from "express";
-import { PrismaClient } from "prisma/prisma-client";
 import { findGameByTxHash } from "../../services/games";
 import { client } from "../../db";
 
@@ -21,6 +20,7 @@ export async function createGame(req: Request, res: Response) {
         state: "CREATED",
         currentTurn: 0,
         currentDatum: data.currentDatum,
+        expirationTime: "0",
       },
     });
 
@@ -35,6 +35,7 @@ export async function createGame(req: Request, res: Response) {
         gameId: game.id,
         txHash: data.txHash,
         outputIndex: data.outputIndex,
+        expirationTime: "0",
       },
     });
 
@@ -59,6 +60,7 @@ export async function updateGame(req: Request, res: Response) {
         state: data.state,
         currentTurn: data.currentTurn,
         currentDatum: data.currentDatum,
+        expirationTime: data.expirationTime,
       },
       where: {
         id: Number(data.id),
