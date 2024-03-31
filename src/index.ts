@@ -18,6 +18,8 @@ try {
   app.use(bodyParser.json({ limit: "1mb" }));
   app.use(bodyParser.urlencoded({ extended: true, limit: "1mb" }));
 
+  app.use(express.static("public", { maxAge: 31557600000 }));
+
   app.use(hydraRoutes);
   app.use(gameRoutes);
   app.use(usersRoutes);
