@@ -79,7 +79,7 @@ export class HydraEngine extends EventEmitter {
       }
 
       const privateKey = CSL.PrivateKey.from_hex(
-        process.env.FUNDS_WALLET_PRIVATE_KEY!
+        process.env.FUNDS_WALLET_PRIVATE_KEY!.substring(4)
       );
       const publicKey = privateKey.to_public();
       const address = CSL.EnterpriseAddress.new(

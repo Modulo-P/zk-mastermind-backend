@@ -1,5 +1,11 @@
 import * as CSL from "@emurgo/cardano-serialization-lib-nodejs";
-import { AppWallet, Asset, IFetcher, Protocol } from "@meshsdk/core";
+import {
+  AppWallet,
+  Asset,
+  IFetcher,
+  Protocol,
+  resolvePaymentKeyHash,
+} from "@meshsdk/core";
 
 export async function resetAddress(
   cardanoProvider: IFetcher,
@@ -8,13 +14,13 @@ export async function resetAddress(
   const nativeScript = CSL.NativeScript.new_script_pubkey(
     CSL.ScriptPubkey.new(
       CSL.Ed25519KeyHash.from_hex(
-        "b5b425aa8b18c537da26366fe4da1c709440daa7878ac25c63d89086"
+        resolvePaymentKeyHash(cardanoWallet.getBaseAddress())
       )
     )
   );
 
   const utxos = await cardanoProvider.fetchAddressUTxOs(
-    "addr_test1wz0c73j3czfd77gtg58jtm2dz8fz7yrxzylv7dc67kew5tqk4uqc9"
+    cardanoWallet.getBaseAddress()
   );
 
   const txBuilder = CSL.TransactionBuilder.new(txBuilderConfig);
@@ -39,7 +45,7 @@ export async function resetAddress(
 
   txBuilder.add_required_signer(
     CSL.Ed25519KeyHash.from_hex(
-      "b5b425aa8b18c537da26366fe4da1c709440daa7878ac25c63d89086"
+      resolvePaymentKeyHash(cardanoWallet.getBaseAddress())
     )
   );
 
