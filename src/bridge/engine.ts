@@ -428,7 +428,17 @@ class OperationsProcessor {
 
         const output = CSL.TransactionOutput.new(
           CSL.Address.from_bech32(operation.destinationAddress),
-          toValue(operation.amount)
+          toValue(
+            operation.amount.map((amt) => {
+              if (amt.unit === "lovelace") {
+                return {
+                  unit: "lovelace",
+                  quantity: (Number(amt.quantity) - 200000).toString(),
+                };
+              }
+              return amt;
+            })
+          )
         );
         txBuilder.add_output(output);
 
