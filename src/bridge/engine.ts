@@ -393,7 +393,7 @@ class OperationsProcessor {
         const nativeScript = CSL.NativeScript.new_script_pubkey(
           CSL.ScriptPubkey.new(
             CSL.Ed25519KeyHash.from_hex(
-              process.env.FUNDS_WALLET_PRIVATE_KEY!.substring(4)
+              resolvePaymentKeyHash(this._hydraWallet.getBaseAddress())
             )
           )
         );
