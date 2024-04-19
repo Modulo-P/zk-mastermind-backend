@@ -433,7 +433,7 @@ class OperationsProcessor {
               if (amt.unit === "lovelace") {
                 return {
                   unit: "lovelace",
-                  quantity: (Number(amt.quantity) - 200000).toString(),
+                  quantity: (Number(amt.quantity) - 1000000).toString(),
                 };
               }
               return amt;
