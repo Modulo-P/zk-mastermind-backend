@@ -398,9 +398,14 @@ class OperationsProcessor {
           )
         );
 
+        const nativeScriptAddress = CSL.EnterpriseAddress.new(
+          0,
+          CSL.StakeCredential.from_scripthash(nativeScript.hash())
+        );
+
         const utxos = await this._engine
           .getCardanoProvider()
-          .fetchAddressUTxOs(this._hydraWallet.getBaseAddress());
+          .fetchAddressUTxOs(nativeScriptAddress.to_address().to_bech32());
 
         const assetMap = new Map<Unit, Quantity>();
 
@@ -433,7 +438,7 @@ class OperationsProcessor {
               if (amt.unit === "lovelace") {
                 return {
                   unit: "lovelace",
-                  quantity: (Number(amt.quantity) - 1000000).toString(),
+                  quantity: (Number(amt.quantity) - 200000).toString(),
                 };
               }
               return amt;
@@ -442,9 +447,7 @@ class OperationsProcessor {
         );
         txBuilder.add_output(output);
 
-        txBuilder.add_change_if_needed(
-          CSL.Address.from_bech32(this._hydraWallet.getBaseAddress())
-        );
+        txBuilder.add_change_if_needed(nativeScriptAddress.to_address());
 
         txBuilder.add_required_signer(
           CSL.Ed25519KeyHash.from_hex(
