@@ -71,8 +71,9 @@ export class HydraEngine extends EventEmitter {
         await this._client.init(60);
       } catch (e) {
         if (this._client.hydraStatus !== "INITIALIZING") {
-          console.error(e);
-          throw e;
+          console.log(e);
+          setTimeout(() => this.start(), 10000);
+          return;
         } else {
           console.log("Head is already initializing");
         }

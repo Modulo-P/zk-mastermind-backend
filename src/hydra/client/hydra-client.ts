@@ -1,9 +1,9 @@
-import { EventEmitter } from "stream";
-import { HydraUTxO, HydraWebsocketPromise } from "../../types/hydra";
-import { HydraConnection } from "./connection/hydra-connection";
 import { UTxO, resolveTxHash } from "@meshsdk/core";
-import { convertHydraToMeshUTxOs } from "../utils";
+import { EventEmitter } from "stream";
 import { unwrapCBOR } from "../../common/blockchain";
+import { HydraUTxO, HydraWebsocketPromise } from "../../types/hydra";
+import { convertHydraToMeshUTxOs } from "../utils";
+import { HydraConnection } from "./connection/hydra-connection";
 
 export const HYDRA_STATUS = {
   IDLE: "IDLE",
@@ -176,6 +176,9 @@ export class HydraClient extends EventEmitter {
         break;
       case "CommandFailed":
         rejectPromises(message.clientInput.tag, message);
+        break;
+      case "PostTxOnChainFailed":
+        rejectPromises("Init", message);
         break;
     }
   }
