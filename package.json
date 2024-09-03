@@ -17,7 +17,7 @@
   "license": "ISC",
   "dependencies": {
     "@emurgo/cardano-serialization-lib-nodejs": "^11.5.0",
-    "@meshsdk/core": "^1.5.11-beta.3",
+    "@meshsdk/core": "1.5.11-beta.3",
     "@prisma/client": "5.6.0",
     "axios": "^1.6.2",
     "blake2": "^5.0.0",

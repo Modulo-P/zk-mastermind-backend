@@ -573,7 +573,7 @@
     "@jridgewell/resolve-uri" "^3.1.0"
     "@jridgewell/sourcemap-codec" "^1.4.14"
 
-"@meshsdk/core@^1.5.11-beta.3":
+"@meshsdk/core@1.5.11-beta.3":
   version "1.5.11-beta.3"
   resolved "https://registry.yarnpkg.com/@meshsdk/core/-/core-1.5.11-beta.3.tgz#8825d9c5675ecdb656ba432da5c7402cff50f590"
   integrity sha512-9kUh1g3EdinbOUkwGM7ZsP9qAz55aI2CI7pp25GVcwQ0Lm+UKKxfD5+FKBL596Bsen/UUwMi3o6mpabvIA7AvQ==

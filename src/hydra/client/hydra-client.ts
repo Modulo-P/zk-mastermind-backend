@@ -1,6 +1,5 @@
 import { UTxO, resolveTxHash } from "@meshsdk/core";
 import { EventEmitter } from "stream";
-import { unwrapCBOR } from "../../common/blockchain";
 import { HydraUTxO, HydraWebsocketPromise } from "../../types/hydra";
 import { convertHydraToMeshUTxOs } from "../utils";
 import { HydraConnection } from "./connection/hydra-connection";
@@ -164,14 +163,12 @@ export class HydraClient extends EventEmitter {
         resolvePromises("GetUTxO");
         break;
       case "TxValid":
-        const txCborValid = unwrapCBOR(message.transaction);
-        const txHash = resolveTxHash(txCborValid);
-        this.emit("tx", txCborValid);
+        const txHash = resolveTxHash(message.transaction.cborHex);
+        this.emit("tx", message.transaction.cborHex);
         resolvePromises("NewTx", txHash);
         break;
       case "TxInvalid":
-        const txCborInvalid = unwrapCBOR(message.transaction);
-        const txHashInvalid = resolveTxHash(txCborInvalid);
+        const txHashInvalid = resolveTxHash(message.transaction.cborHex);
         rejectPromises("NewTx", message.validationError.reason, txHashInvalid);
         break;
       case "CommandFailed":
@@ -216,7 +213,7 @@ export class HydraClient extends EventEmitter {
       });
     });
 
-    this._connection.send(JSON.stringify({ tag: "NewTx", transaction }));
+    this._connection.send(JSON.stringify({ tag: "NewTx", transaction: { type: "Tx BabbageEra", desciption: "", cborHex: transaction }}));
 
     return response;
   }
